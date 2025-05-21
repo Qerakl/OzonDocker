@@ -1,0 +1,76 @@
+services:
+  db:
+    image: mysql:5.7
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - mynetwork
+
+  crm-app:
+    build:
+      context: ./OzonApi
+      dockerfile: Dockerfile
+    container_name: crm-app
+    volumes:
+      - ./OzonApi/storage/app/public:/var/www/html/storage/app/public
+      - ./OzonApi:/var/www/html
+    networks:
+      - mynetwork
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      PHP_FPM_LISTEN: 9000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - db
+    command: >
+      bash -c "mkdir -p /var/www/html/bootstrap/cache &&
+      chown -R www-data:www-data /var/www/html &&
+      chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache &&
+      php-fpm -F"
+
+  nginx:
+    image: nginx:alpine
+    container_name: crm-nginx
+    volumes:
+      - ./OzonApi:/var/www/html
+      - ./OzonApi/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./OzonApi/nginx/ssl-farmchel.pem:/etc/nginx/ssl-farmchel.pem:ro
+      - ./OzonApi/nginx/ssl-farmchel.key:/etc/nginx/ssl-farmchel.key:ro
+    ports:
+      - "443:443"
+      - "80:80"
+    networks:
+      - mynetwork
+    depends_on:
+      - crm-app
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: bot
+    ports:
+      - "8000:8000"
+    networks:
+      - mynetwork
+    volumes:
+      - ./bot:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  db_data:
+
+networks:
+  mynetwork:
+    driver: bridge
